@@ -19,7 +19,8 @@ FFT-GALAXY-CLASSIFICAITON
     README.txt
 
 Setup (Windows)
-Open this repository with VSCode
+Clone the repository into a folder with github desktop(mine is called FFT-GALAXY-CLASSIFICAITON in my documents)
+Open this folder with VSCode
 Assuming you have python installed(you should) run these commands below in the vscode terminal.
 
 python -m venv .venv
