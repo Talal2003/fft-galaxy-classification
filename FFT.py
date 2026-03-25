@@ -1,4 +1,5 @@
-#Date 3/15/2026 
+#Date Started: 3/15/2026 
+#Last Updated: 3/22/2026 (SMH)
 #Group #1
 #Contributions:
 #Shaima Hamdallah: Image handeling and preprocessing, FFT computation, magnitude and power spectra generation, feature extraction, and building feature vectors for ML models. 
@@ -30,6 +31,7 @@ import os
 import math 
 from pathlib import Path	
 from PIL import Image
+from regex import W
 from sklearn.preprocessing import StandardScaler	
 from sklearn.model_selection import train_test_split
 
@@ -97,6 +99,14 @@ class FourierTransform:
 			self.test_power_spectra = []
 			self.test_features = []
 			self.X_test_features = None
+			#pipleine init 
+			self.scaler = None
+			self.model = None
+			self.X_train_split = None
+			self.X_val_split = None
+			self.Y_train_split = None
+			self.Y_val_split = None
+
 	#method to load the labels from the CSV file, if provided, and store the target column names for later use in training the ML model
 	#add error handling for missing or malformed CSV file, and ensure that the target columns are correctly identified for training the model
 	def load_labels(self):
@@ -152,7 +162,7 @@ class FourierTransform:
 		"""
 		compute the 2d fft for each of the images (list pf np.ndarray) and return a list of the fft results
 		"""
-		self.fft_results = []
+		fft_results = []
 		for img in images:
 				fft_result = np.fft.fftshift(np.fft.fft2(img)) #compute the 2D FFT and shift the zero frequency component to the center of the spectrum
 				self.fft_results.append(fft_result) #store the FFT result for later use in generating spectra and extracting features
@@ -193,5 +203,273 @@ class FourierTransform:
 		for feature in self.features:
 			feature_vector = np.array(feature).flatten()
 			self.feature_vectors.append(feature_vector)
+	def extract_radial_features(self, magnitude_spectra):
+		"""
+		this methos will compte the numeric FFT based features by radial bins. 
+		"""
+		h, w = magnitude_spectra[0].shape
+		center_y, center_x = h // 2, w // 2
+		y, x = np.indices((h, w))
+		radius = np.sqrt((x - center_x) ** 2 + (y - center_y) ** 2)
+		max_radius = min(center_x, center_y)
+		radial_bins = np.linspace(0, max_radius, self.num_radial_bins + 1)
+		radial_features = []
+		for magnitude in magnitude_spectra:
+			binned_energy = np.zeros(self.num_radial_bins)
+			for i in range(self.num_radial_bins):
+				mask = (radius >= radial_bins[i]) & (radius < radial_bins[i + 1])
+				binned_energy[i] = np.sum(magnitude[mask])
+			radial_features.append(binned_energy)
+			return radial_features
+			
 
-	
+
+		def extract_orientation_features(self, magnitude_spectra):
+			h, w = magnitude_spectra[0].shape
+			center_y, center_x = h // 2, w // 2
+			y, x = np.indices((h, w))
+			x_shift = x - center_x
+			y_shift = y - center_y
+			angles = np.arctan2(y_shift, x_shift)
+			radius = np.sqrt(x_shift ** 2 + y_shift ** 2)
+			center_exclusion = radius > 5  # Exclude the central region to avoid dominance of low frequencies
+			angle_bins = np.linspace(-np.pi, np.pi, self.num_radial_bins + 1)
+			orientation_features = []
+			for magnitude in magnitude_spectra:
+				hist = np.zeros(self.num_radial_bins)
+				for i in range(self.num_radial_bins):
+					mask = (angles >= angle_bins[i]) & (angles < angle_bins[i + 1]) & center_exclusion
+					hist[i] = np.sum(magnitude[mask])
+				orientation_features.append(hist)
+			return orientation_features
+
+		def extract_spiral_features(self, magnitude_spectra):
+			"""
+			Extracts features related to the spiral structure of the galaxies.
+			Returns a list of spiral features (one per image).
+			"""
+			spiral_features = []
+			for magnitude in magnitude_spectra:
+				# Compute the 2D FFT of the log-magnitude spectrum to enhance spiral arm detection
+				log_magnitude = np.log1p(magnitude)
+				fft_of_fft = np.abs(np.fft.fftshift(np.fft.fft2(log_magnitude)))
+				# Find the dominant frequency in the log-polar space (proxy for spiral arm count)
+				dominant_spiral_freq = np.unravel_index(np.argmax(fft_of_fft), fft_of_fft.shape)
+				spiral_strength = np.max(fft_of_fft)
+				spiral_features.append([dominant_spiral_freq[0], dominant_spiral_freq[1], spiral_strength])
+			return spiral_features
+
+		def extract_bulge_feature(self, image):
+			"""
+			Extracts the center concentration of the galaxy (bulge strength).
+			Returns a scalar feature.
+			"""
+			h, w = image.shape
+			center_y, center_x = h // 2, w // 2
+			y, x = np.indices((h, w))
+			radius = np.sqrt((x - center_x) ** 2 + (y - center_y) ** 2)
+			bulge_radius = min(h, w) * 0.1  # 10% of the image size as bulge region
+			bulge_mask = radius < bulge_radius
+			bulge_sum = np.sum(image[bulge_mask])
+			total_sum = np.sum(image)
+			bulge_ratio = bulge_sum / (total_sum + 1e-8)
+			return bulge_ratio
+
+		def extract_roundness_features(self, image):
+			"""
+			Extracts the shape symmetry and roundness of the galaxy.
+			Returns a tuple: (eccentricity, symmetry_score)
+			"""
+			h, w = image.shape
+			center_y, center_x = h // 2, w // 2
+			y, x = np.indices((h, w))
+			x_shift = x - center_x
+			y_shift = y - center_y
+			# Calculate moments for eccentricity
+			m00 = np.sum(image)
+			m10 = np.sum(x_shift * image)
+			m01 = np.sum(y_shift * image)
+			m20 = np.sum((x_shift ** 2) * image)
+			m02 = np.sum((y_shift ** 2) * image)
+			m11 = np.sum(x_shift * y_shift * image)
+			cov_xx = m20 / m00 - (m10 / m00) ** 2
+			cov_yy = m02 / m00 - (m01 / m00) ** 2
+			cov_xy = m11 / m00 - (m10 / m00) * (m01 / m00)
+			cov = np.array([[cov_xx, cov_xy], [cov_xy, cov_yy]])
+			eigvals = np.linalg.eigvalsh(cov)
+			eccentricity = np.sqrt(1 - eigvals[0] / (eigvals[1] + 1e-8)) if eigvals[1] > 0 else 0
+			# Symmetry: compare image with its 180-degree rotation
+			rotated = np.rot90(image, 2)
+			symmetry_score = 1 - np.sum(np.abs(image - rotated)) / (np.sum(image) + 1e-8)
+			return eccentricity, symmetry_score
+
+		def extract_core_features(self, image, magnitude_spectra, power_spectra):
+			"""
+			Combines image space and FFT space features into one feature set.
+			Returns a 1D feature vector.
+			"""
+			# Radial features (energy in radial bins)
+			radial_feats = np.array(self.extract_radial_features([magnitude_spectra])[0])
+			# Orientation features (energy in angle bins)
+			orientation_feats = np.array(self.extract_orientation_features([magnitude_spectra])[0])
+			# Spiral features (dominant spiral frequency and strength)
+			spiral_feats = np.array(self.extract_spiral_features([magnitude_spectra])[0])
+			# Bulge feature (center concentration)
+			bulge_feat = self.extract_bulge_feature(image)
+			# Roundness features (eccentricity, symmetry)
+			roundness_feats = np.array(self.extract_roundness_features(image))
+			# Combine all features into a single vector
+			feature_vector = np.concatenate([
+				radial_feats,
+				orientation_feats,
+				spiral_feats,
+				[bulge_feat],
+				roundness_feats
+			])
+			return feature_vector
+	def extract_features_train(self):
+		"""
+		this method will run the features extraction process for all training spectra and store the results
+		this will turn the training images into usable numerical features for the ML model. 
+		"""
+		self.train_features = []
+
+		for image, magnitude, power in zip(
+			self.train_images,
+			self.train_magnitude_spectra,
+			self.train_power_spectra
+		):
+			feature_vector = self.extract_core_features(image, magnitude, power)
+			self.train_features.append(feature_vector)
+
+	def extract_features_test(self):
+		"""
+		this method will run the features extraction process for all test spectra and store the results
+		this will turn the test images into usable numerical features for the ML model. 
+		"""
+		self.test_features = []
+		for magnitude in self.test_magnitude_spectra:
+			dominant_freq = np.unravel_index(np.argmax(magnitude), magnitude.shape) 
+			energy_distribution = np.sum(magnitude)
+			self.test_features.append([dominant_freq, energy_distribution])
+	def build_feature_matrix(self):
+		"""
+		this method will build the feature matrix for the training and test data, which will be used for training and evaluating the ML model. 
+		"""
+		self.X_train_features = np.array(self.train_features)
+		self.X_test_features = np.array(self.test_features)
+	def build_test_feature_matrix(self):
+		"""
+		this method will be used to convert the extracted test features into one 2D matrix (xtest) 
+		"""
+		self.X_test_features = np.array(self.test_features)
+		return self.X_test_features
+	def build_target_matrix(self, selected_targetes = None):
+		"""
+		build y_train with the train ids as the galaxy ID, if slected target is provided, only that is used. 
+		"""
+		if self.labels_df is None: 
+			print("No labels loaded. Cannot build target matrix.")
+			return None
+		if 'GalaxyID' not in self.labels_df.columns:
+			print("GalaxyID column not found in labels. Cannot build target matrix.")
+			return None
+		if selected_targetes is not None:
+			selected_targets = self.target_columns
+		labels_indexed = self.labels_df.set_index('GalaxyID')
+		missing_ids = [gid for gid in self.train_ids if gid not in labels_indexed.index]
+
+		if missing_ids:
+			print(f"Warning: The following GalaxyIDs are missing from the labels and will be skipped: {missing_ids}")
+		self.Y_train_targets = []
+		return self.Y_train_targets
+	def scale_features(self):
+		"""
+		this method will scale the features using standardization, which can help improve the performance of many ML models. 
+		"""
+		self.scaler = StandardScaler()
+		self.X_train_features = self.scaler.fit_transform(self.X_train_features)
+
+		if self.X_test_features is not None:
+			self.X_test_features = self.scaler.transform(self.X_test_features)
+
+		return self.X_train_features, self.X_test_features
+
+	def split_train_validation(self, test_size=0.2, random_state=42):
+		if self.X_train_features is None or self.Y_train_targets is None:
+			raise ValueError("Build X_train and Y_train before splitting.")
+
+		(
+			self.X_train_split,
+			self.X_val_split,
+			self.Y_train_split,
+			self.Y_val_split
+		) = train_test_split(
+			self.X_train_features,
+			self.Y_train_targets,
+			test_size=test_size,
+			random_state=random_state
+		)
+
+		return (
+			self.X_train_split,
+			self.X_val_split,
+			self.Y_train_split,
+			self.Y_val_split
+		)
+	def train_model(self, model):
+		if not hasattr(self, 'X_train_split') or not hasattr(self, 'Y_train_split'):
+			raise ValueError("Split the data into training and validation sets before training the model.")
+		model.fit(self.X_train_split, self.Y_train_split)
+		self.model = model
+		return self.model
+	def predict(self, x):
+		if not hasattr(self, 'model'):
+			raise ValueError("Train the model before making predictions.")
+		return self.model.predict(x)
+	def evaluate_model(self):
+		if not hasattr(self, 'model'):
+			raise ValueError("Train the model before evaluating.")
+		if not hasattr(self, 'X_val_split') or not hasattr(self, 'Y_val_split'):
+			raise ValueError("Split the data into training and validation sets before evaluating the model.")
+		from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+
+		y_pred = self.model.predict(self.X_val_split)
+
+		metrics = {
+			"mse": mean_squared_error(self.Y_val_split, y_pred),
+			"mae": mean_absolute_error(self.Y_val_split, y_pred),
+			"r2": r2_score(self.Y_val_split, y_pred)
+		}
+		return metrics
+#=======================================================================
+#	Pipeline helper function. 
+#===================================================================
+	def prepare_training_data(self, selected_targets = None):
+		"""
+		this method will run the entire pipeline for preparing the training data, from loading and preprocessing the images, to computing the FFT, generating the spectra, extracting the features, building the feature matrix, and building the target matrix. 
+		"""
+		self.load_labels()
+		self.load_and_preprocess_training_images()
+
+		self.train_fft_results = self.compute_fft(self.train_images)
+		self.train_magnitude_spectra, self.train_power_spectra = self.generate_spectra(self.train_fft_results)
+
+		self.extract_features_train()
+		self.build_feature_matrix()
+		self.build_target_matrix(selected_targets=selected_targets)
+
+		return self.X_train_features, self.Y_train_targets
+
+	def prepare_test_data(self):
+		self.load_and_preprocess_test_images()
+		self.test_fft_results = self.compute_fft(self.test_images)
+		self.test_magnitude_spectra, self.test_power_spectra = self.generate_spectra(self.test_fft_results)
+
+		self.extract_features_test()
+		self.build_test_feature_matrix()
+
+		if hasattr(self, 'scaler'):
+			self.X_test_features = self.scaler.transform(self.X_test_features)
+
+		return self.X_test_features
