@@ -1,0 +1,103 @@
+import numpy as np  # Load NumPy for numerical operations and arrays
+import pandas as pd  # Load pandas for handling CSV files and data frames
+
+# -----------------------------
+# 1) Load the Galaxy Zoo data
+file_read = r"C:\Users\gjackso12\Downloads\galaxy-zoo-the-galaxy-challenge\training_solutions_rev1.zip"  # Path to the CSV/ZIP file
+solutions_df = pd.read_csv(file_read)  # Read the CSV into a pandas DataFrame so we can access galaxy labels
+
+# Pick class columns (Q1)
+class_cols = ['Class1.1','Class1.2','Class1.3']  # Select the first three class columns
+y_solution_values = solutions_df[class_cols].to_numpy()  # Convert the selected columns to a NumPy array for calculations
+
+# Get number of galaxies and number of classes
+num_galaxies, num_classes = y_solution_values.shape  # Rows = galaxies, Columns = classes
+
+# -----------------------------
+# 2) Dummy FFT features (to be replaced later)
+num_features = 50  # Define the number of dummy features per galaxy
+X_dummy = np.random.rand(num_galaxies, num_features)  # Generate random numbers to simulate features
+
+# Standardize features so they all have similar scale
+X_mean = X_dummy.mean(axis=0)  # Calculate mean of each feature column
+X_std = X_dummy.std(axis=0)  # Calculate standard deviation of each feature column
+X_scaled = (X_dummy - X_mean) / X_std  # Subtract mean and divide by std to standardize
+
+# Add intercept term to the features
+ones_col = np.ones((num_galaxies, 1))  # Create a column of ones for the intercept
+X_fft_values = np.hstack((ones_col, X_scaled))  # Concatenate ones column with standardized features
+
+# -----------------------------
+# 3) 2-fold cross-validation setup
+row_indices = np.arange(num_galaxies)  # Create an array of indices from 0 to num_galaxies-1
+
+even_train = row_indices % 2 == 0  # Even-indexed rows will be training for fold 1
+even_test  = row_indices % 2 == 1  # Odd-indexed rows will be testing for fold 1
+
+odd_train  = row_indices % 2 == 1  # Odd-indexed rows will be training for fold 2
+odd_test   = row_indices % 2 == 0  # Even-indexed rows will be testing for fold 2
+
+# -----------------------------
+# Accuracy function
+def accuracy(y_actual_values, y_pred_values):  # Define a function to compute classification accuracy
+    y_true_class = np.argmax(y_actual_values, axis=1)  # Get the true class index for each galaxy
+    y_pred_class = np.argmax(y_pred_values, axis=1)  # Get the predicted class index for each galaxy
+    return np.mean(y_true_class == y_pred_class) * 100  # Compute the percentage of correct predictions
+
+# Class labels for display
+class_names = ['Smooth', 'Features/Disk', 'Star/Artifact']  # Names of the galaxy classes
+
+# -----------------------------
+# 4) Fold 1: train on even rows, test on odd rows
+X_train_f1 = X_fft_values[even_train]  # Select training features for fold 1
+y_train_f1 = y_solution_values[even_train]  # Select training labels for fold 1
+
+X_test_f1  = X_fft_values[even_test]  # Select testing features for fold 1
+y_test_f1  = y_solution_values[even_test]  # Select testing labels for fold 1
+
+# Fit linear regression model for fold 1
+beta_f1 = np.linalg.inv(X_train_f1.T @ X_train_f1) @ X_train_f1.T @ y_train_f1  # Compute beta = (X^T X)^-1 X^T y
+
+# Predict on test set for fold 1
+y_pred_f1 = X_test_f1 @ beta_f1  # Multiply test features by beta coefficients to get predictions
+
+# Compute fold 1 accuracy
+accuracy_f1 = accuracy(y_test_f1, y_pred_f1)  # Call accuracy function
+print("Fold 1 accuracy:", accuracy_f1, "%")  # Print the accuracy
+
+# Show first 3 predictions for fold 1
+print("\nFirst 3 test galaxies (Fold 1):")  # Header
+for i in range(3):  # Loop over first 3 test galaxies
+    pred_class = np.argmax(y_pred_f1[i])  # Get predicted class index
+    actual_class = np.argmax(y_test_f1[i])  # Get actual class index
+    print(f"Galaxy {i+1}: Predicted = {class_names[pred_class]}, Actual = {class_names[actual_class]}")  # Print prediction vs actual
+
+# -----------------------------
+# 5) Fold 2: train on odd rows, test on even rows
+X_train_f2 = X_fft_values[odd_train]  # Training features for fold 2
+y_train_f2 = y_solution_values[odd_train]  # Training labels for fold 2
+
+X_test_f2  = X_fft_values[odd_test]  # Testing features for fold 2
+y_test_f2  = y_solution_values[odd_test]  # Testing labels for fold 2
+
+# Fit linear regression for fold 2
+beta_f2 = np.linalg.inv(X_train_f2.T @ X_train_f2) @ X_train_f2.T @ y_train_f2  # Compute beta coefficients
+
+# Predict on fold 2 test set
+y_pred_f2 = X_test_f2 @ beta_f2  # Predictions
+
+# Compute fold 2 accuracy
+accuracy_f2 = accuracy(y_test_f2, y_pred_f2)  # Call accuracy function
+print("\nFold 2 accuracy:", accuracy_f2, "%")  # Print accuracy
+
+# Show first 3 predictions for fold 2
+print("\nFirst 3 test galaxies (Fold 2):")  # Header
+for i in range(3):  # Loop over first 3 test galaxies
+    pred_class = np.argmax(y_pred_f2[i])  # Get predicted class index
+    actual_class = np.argmax(y_test_f2[i])  # Get actual class index
+    print(f"Galaxy {i+1}: Predicted = {class_names[pred_class]}, Actual = {class_names[actual_class]}")  # Print prediction vs actual
+
+# -----------------------------
+# 6) Average accuracy across the two folds
+avg_accuracy = (accuracy_f1 + accuracy_f2) / 2  # Compute the mean of fold 1 and fold 2 accuracies
+print("\nAverage 2-fold accuracy:", avg_accuracy, "%")  # Print the average accuracy
