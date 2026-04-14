@@ -9,7 +9,6 @@ from fft_galaxy_runner.data import load_training_dataset
 from fft_galaxy_runner.models import (
     build_feature_extractor,
     evaluate_models,
-    format_detailed_results,
     format_summary_table,
     write_results_report,
 )
@@ -39,9 +38,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(format_summary_table(results))
 
-    if run_config.detailed:
-        print()
-        print(format_detailed_results(results))
 
     if run_config.output_path is not None:
         write_results_report(

@@ -149,7 +149,7 @@ def build_feature_extractor(run_config: RunConfig) -> Callable[[bytes], np.ndarr
             bw = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
             return _fft_channel_features(bw, run_config.fft_size)
 
-        if run_config.color_mode == "rgb":
+        if run_config.color_mode == "RGB":
             # Keep one FFT spectrum per channel, then concatenate them into one feature vector.
             rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
             channels = cv2.split(rgb_image)

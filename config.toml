@@ -1,11 +1,11 @@
 # Edit these values to change the run.
 data_dir = "galaxy-zoo-the-galaxy-challenge"
-sample_size = "all"
+sample_size = "2000"
 targets = "all"
-evaluation = "single"
+evaluation = "twofold"
 validation_split = 0.2
-random_seed = 42
-color_mode = "BW"
+random_seed = 76
+color_mode = "RGB"
 models = ["sklearn-linear", "closed-form-linear", "ridge", "pca-linear", "random-forest"]
 detailed = false
 # Optional report path. Leave commented out to skip file output.
