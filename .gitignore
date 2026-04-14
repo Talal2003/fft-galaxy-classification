@@ -1,3 +1,5 @@
 *.zip
 .venv
 galaxy-zoo-the-galaxy-challenge/
+__pycache__/
+.vs/

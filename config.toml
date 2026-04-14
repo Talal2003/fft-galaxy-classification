@@ -1,0 +1,14 @@
+# Edit these values to change the run.
+data_dir = "galaxy-zoo-the-galaxy-challenge"
+sample_size = "all"
+targets = "all"
+evaluation = "single"
+validation_split = 0.2
+random_seed = 42
+color_mode = "BW"
+models = ["sklearn-linear", "closed-form-linear", "ridge", "pca-linear", "random-forest"]
+detailed = false
+# Optional report path. Leave commented out to skip file output.
+# output_path = "reports/latest-run.txt"
+image_size = [128, 128]
+fft_size = [32, 32]
